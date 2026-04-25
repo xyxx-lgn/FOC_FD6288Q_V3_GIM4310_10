@@ -15,7 +15,7 @@ extern PID pid_m1;                     //PID参数结构体
 extern CANFD_Message CanFD_Message;    //CAN通信消息结构体
 extern Motor_Factor motor_factor;      //电机参数结构体
 
-float theta=0,Iwidth=300;  //电流环带宽测试变量，不用时屏蔽
+float theta=0,Iwidth=150;  //电流环带宽测试变量，不用时屏蔽
 
 /*
 函数功能：
@@ -56,8 +56,8 @@ uint8_t Motor_Seletct(uint8_t motor_select)
 		pid_m1.Kp_i=motor_factor.motor_phaseL*2.0f*M_PI*150.0f;           //0.4241149f(150) 0.2827433f(100)
 		pid_m1.Ki_i=motor_factor.motor_phaseR*2.0f*M_PI*150.0f/20000.0f;  //0.0315729f(150) 0.0210486f(100)
 		
-		pid_m1.Kp_speed=0.04f;      //速度环Kp值    
-		pid_m1.Ki_speed=0.0001f;    //速度环Ki值  
+		pid_m1.Kp_speed=0.05f;      //速度环Kp值    
+		pid_m1.Ki_speed=0.00018f;    //速度环Ki值  
 		
 		pid_m1.Kp_position=30.0f;   //位置环Kp值
 	}

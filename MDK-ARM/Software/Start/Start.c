@@ -116,7 +116,7 @@ void Enable_IT(void)
 	//ADC1初始化，用于AB相电流采样和母线电压采样
 	//HAL_ADC_Start_DMA(&hadc1,(uint32_t *)ADC1RegularDate,3);   //轮询和注入二选一，注入速度更快，不开启DMA
 	Data_Init();        //参数初始化
-    CanFD_Message.Motor_Select = 1 ;
+    CanFD_Message.Motor_Select = 1   ;
 	Motor_Seletct(CanFD_Message.Motor_Select);   //电机参数选择，放在Data_Init()函数后，调试参数时注释
 	FIR_DSP_Init();     //First滤波器初始化，要求芯片有DSP库才能使用
 	cordic_config();    //cordic库初始化，只能加速一种数学算法，我选择加速的是sincos计算

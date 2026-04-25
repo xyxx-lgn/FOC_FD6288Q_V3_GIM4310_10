@@ -18,6 +18,7 @@ uint8_t Motor_Can_ID[6]={0x11,0x12,0x13,0x14,0x15,0x16};
 uint8_t six_direction[6] = {1,0,0,1,0,1};
 float Line_Planning_All_Points[150];
 uint16_t Line_Planning_All_Speed[150];
+uint16_t Line_Planning_All_Gap_Time[150];
 uint16_t Line_Planning_nums = 0;
 uint16_t Last_Line_Planning_nums = 0;  //记录Line_Planning_nums数目，确保接收到路径点的角度速度值
 uint16_t now_nums = 0;
@@ -201,7 +202,7 @@ void CAN_State(uint16_t Identifier)
 					Line_Planning_Flag = 0;
 					CANFD_Send(Motor_ID+16,6,0,six_direction[CanFD_Message.Motor_Select-1],0);//发送指令6，确保已清零
 					break;
-				case 7:  //存储直线路径规划的所有目标值以及速度值
+				case 7:  //存储路径规划的所有目标值以及速度值，由主控下发
 					if(Line_Planning_nums == Last_Line_Planning_nums-1)
 					{
 						Line_Planning_All_Points[Line_Planning_nums] = CanFD_Message.Control_Target+CanFD_Message.Initial_Angle;
@@ -211,8 +212,15 @@ void CAN_State(uint16_t Identifier)
 					break;
 				case 8: //直线路径规划启动指令
 					Line_Planning_Flag = 1;
-					Line_Planning_One_Time = CanFD_Message.rotate_speed/10;   //将速度接收位换成时间,单位：ms
-					Line_Planning_One_Time = 4*Line_Planning_One_Time;     //定时器计次次数
+				
+					/*  下面这段开始执行前的时间间隔赋值，是为了之前在直线路径规划使用，现在不用主控指令13，15了，如需使用，得去主控端修改代码*/
+					// 主控在 CAN_Send_Motor() 里把 rotate_speed 乘了减速比发送，
+					// 这里必须按当前电机减速比还原回真实时间(ms)
+					Line_Planning_One_Time = CanFD_Message.rotate_speed/motor_factor.motor_gear;   //将速度接收位换成时间,单位：ms
+					if (Line_Planning_One_Time < 1) Line_Planning_One_Time = 1;
+					Line_Planning_One_Time = 8*Line_Planning_One_Time;     //定时器计次次数
+				
+					//接收到后给主机发送反馈10
 					CANFD_Send(Motor_ID+16,8,0,six_direction[CanFD_Message.Motor_Select-1],0);
 					break;
 				case 9: //直线路径规划完成指令(当到达完成时间后，主控仍未接收完成指令，就会发送指令9查询)
@@ -222,8 +230,10 @@ void CAN_State(uint16_t Identifier)
 				case 10: //接收判断指令
 					CANFD_TxData[7] = Line_Planning_nums;
 					Last_Line_Planning_nums = CANFD_RxData[7];                               //轨迹规划点数
-					if(Line_Planning_nums == Last_Line_Planning_nums)
+					if(Line_Planning_nums == Last_Line_Planning_nums && Line_Planning_nums>0)   //接收到点时再进入
 					{
+						Line_Planning_All_Gap_Time[Line_Planning_nums-1] = (CanFD_Message.rotate_speed/motor_factor.motor_gear)*8;
+						if(Line_Planning_All_Gap_Time[Line_Planning_nums-1]<8) Line_Planning_All_Gap_Time[Line_Planning_nums-1] = 8;  //小于1ms时，赋值为1ms
 						CANFD_Send(Motor_ID+16,10,0,six_direction[CanFD_Message.Motor_Select-1],0);//发送指令10，确保已接收
 					}
 					else
@@ -332,25 +342,29 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
 uint8_t erro_flag;
 uint16_t cnt = 0;
 
-//Timer7的4KHz定时中断，用于CAN发送
+//Timer7的8KHz定时中断，用于CAN接收解析，125us
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
 	static uint16_t i=0;
-  if (htim->Instance == TIM7)          // 250us 到
+  if (htim->Instance == TIM7)          // 125us 到
   { 
 	  CAN_State(RxHeader.Identifier);
 	  i++;
 //	  test_angle_1();
 	  if(Line_Planning_Flag == 1)
 	  {
-		  if((i>Line_Planning_One_Time)||(encoder_str.output_shaft_angle<pid_m1.Position_aim+0.25f && encoder_str.output_shaft_angle>pid_m1.Position_aim-0.25f)) //提前5ms发送
-		  {
-			i = 0;
-			if(cnt  < Line_Planning_nums)
+			if(cnt<Line_Planning_nums)
 			{
-				pid_m1.Position_aim = Line_Planning_All_Points[cnt];
-				pid_m1.target_speed = Line_Planning_All_Speed[cnt]; 
-				cnt++;
+			  if((i>Line_Planning_All_Gap_Time[cnt])||(encoder_str.output_shaft_angle<pid_m1.Position_aim+0.25f && encoder_str.output_shaft_angle>pid_m1.Position_aim-0.25f)) //提前5ms发送
+			  {
+				i = 0;
+				if(cnt  < Line_Planning_nums)
+				{
+					pid_m1.Position_aim = Line_Planning_All_Points[cnt];
+					pid_m1.target_speed = Line_Planning_All_Speed[cnt]; 
+					cnt++;
+				}
+			  }
 			}
 			if((cnt == Line_Planning_nums) && (encoder_str.output_shaft_angle<pid_m1.Position_aim+0.08f && encoder_str.output_shaft_angle>pid_m1.Position_aim-0.08f))
 			{
@@ -358,7 +372,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 				cnt = 0;
 				CANFD_Send(Motor_Can_ID[CanFD_Message.Motor_Select-1]+16,9,Line_Planning_nums,six_direction[CanFD_Message.Motor_Select-1],0);//发送指令9，确保已到达终点
 			}
-		  }
+		  
 	 }
 	  i%=60000;    //避免i疯狂累加
 //	  if(i>=4)   //1K发送频率

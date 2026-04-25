@@ -78,6 +78,7 @@ PID pid_m1;                     //PID参数结构体
 CANFD_Message CanFD_Message;    //CAN通信消息结构体
 Motor_Factor motor_factor;      //电机参数结构体
 
+
 extern float Iwidth;
 
 /* USER CODE END 0 */
@@ -138,7 +139,8 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  
+//	pid_m1.Kp_i=motor_factor.motor_phaseL*2.0f*M_PI*Iwidth;           //0.4241149f(150) 0.2827433f(100)
+//	pid_m1.Ki_i=(motor_factor.motor_phaseR*2.0f*M_PI*Iwidth)/20000.0f;  //0.0315729f(150) 0.0210486f(100)
 	  
 	  encoder_str.Encoder = MT6701_ReadRaw();//10us
 	  
